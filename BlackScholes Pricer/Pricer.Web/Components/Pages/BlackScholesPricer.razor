@@ -1,0 +1,192 @@
+﻿@page "/blackscholespricer"
+@using MudBlazor
+@using Pricer.Numerics
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-5">
+    <MudText Typo="Typo.h3" Align="Align.Center" GutterBottom="true">Options Pricing & Volatility</MudText>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@errorMessage</MudAlert>
+    }
+
+    <MudGrid>
+        <MudItem xs="12">
+            <MudCard Elevation="3">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">1. Shared Parameters</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudSelect T="OptionType" Label="Option Type" @bind-Value="optionType" Variant="Variant.Outlined">
+                                <MudSelectItem Value="OptionType.Call">Call</MudSelectItem>
+                                <MudSelectItem Value="OptionType.Put">Put</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Underlying Price (S)" @bind-Value="underlyingPrice" Format="F2" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Strike Price (K)" @bind-Value="strike" Format="F2" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Time to Maturity (T in years)" @bind-Value="timeToMaturity" Format="F4" Step="0.1" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Risk-Free Rate (r)" @bind-Value="interestRate" Format="F4" Step="0.01" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="3" Style="height: 100%;">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">2. Theoretical Price (Black-Scholes)</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudNumericField Label="Input Volatility (σ)" @bind-Value="volatility" Format="F4" Step="0.01" Variant="Variant.Outlined" Class="mb-4" />
+                    
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="CalculatePrice">
+                        Calculate Price
+                    </MudButton>
+
+                    @if (price.HasValue)
+                    {
+                        <MudPaper Class="pa-4 mt-4 bg-light" Elevation="0">
+                            <MudText Align="Align.Center" Typo="Typo.subtitle1">Calculated Price:</MudText>
+                            <MudText Align="Align.Center" Typo="Typo.h4" Color="Color.Success">@price.Value.ToString("F4")</MudText>
+                        </MudPaper>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="3" Style="height: 100%;">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">3. Implied Volatility</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudNumericField Label="Observed Market Price" @bind-Value="marketPrice" Format="F2" Variant="Variant.Outlined" Class="mb-4" />
+            
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true" OnClick="ComputeImpliedVol">
+                                BS Implied Vol
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudButton Variant="Variant.Filled" Color="Color.Info" FullWidth="true" OnClick="ComputeBachelierImpliedVol">
+                                Bachelier IV
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (impliedVol.HasValue || bachelierImpliedVol.HasValue)
+                    {
+                        <MudPaper Class="pa-4 mt-4 bg-light" Elevation="0">
+                            @if (impliedVol.HasValue)
+                            {
+                                <MudText Align="Align.Center" Typo="Typo.body1">
+                                    <strong>Black-Scholes IV:</strong> @(impliedVol.Value.ToString("P2"))
+                                </MudText>
+                            }
+                            @if (bachelierImpliedVol.HasValue)
+                            {
+                                <MudText Align="Align.Center" Typo="Typo.body1" Class="mt-2">
+                                    <strong>Bachelier IV:</strong> @((bachelierImpliedVol.Value / (underlyingPrice * Math.Exp(interestRate * timeToMaturity))).ToString("P2"))
+                                </MudText>
+                            }
+                        </MudPaper>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private OptionType optionType = OptionType.Call;
+
+    private double underlyingPrice = 100;
+    private double strike = 100;
+    private double interestRate = 0.05;
+    private double volatility = 0.2;
+    private double timeToMaturity = 1.0;
+
+    private double? price;
+    private string? errorMessage;
+
+    private double marketPrice = 10.0;
+    private double tolerance = 1e-8;
+    private int maxIterations = 100;
+    private double? impliedVol;
+    private double? bachelierImpliedVol;
+
+    private void CalculatePrice()
+    {
+        errorMessage = null;
+        try
+        {
+            var blackScholesPricer = new BlackScholes(
+                optionType,
+                interestRate,
+                timeToMaturity,
+                volatility,
+                strike,
+                underlyingPrice
+            );
+
+            price = blackScholesPricer.Price();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error calculating price: {ex.Message}";
+        }
+    }
+
+    private void ComputeImpliedVol()
+    {
+        errorMessage = null;
+        try
+        {
+            impliedVol = ImpliedVolatilityCalculator.Compute(
+                optionType,
+                marketPrice,
+                interestRate,
+                timeToMaturity,
+                strike,
+                underlyingPrice,
+                0.2D,
+                tolerance,
+                maxIterations
+            );
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error computing Black-Scholes IV: {ex.Message}";
+        }
+    }
+
+    private void ComputeBachelierImpliedVol()
+    {
+        errorMessage = null;
+        try
+        {
+            bachelierImpliedVol = ImpliedVolatilityCalculator.BachelierImpliedVolATM(marketPrice, underlyingPrice, timeToMaturity, interestRate);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error computing Bachelier IV: {ex.Message}";
+        }
+    }
+}
