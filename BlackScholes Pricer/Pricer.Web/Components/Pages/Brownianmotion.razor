@@ -1,5 +1,6 @@
 @page "/brownian-motion"
 @using MudBlazor
+@using Pricer.Numerics
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-5">
     <MudText Typo="Typo.h3" Align="Align.Center" GutterBottom="true">Brownian Motion & Volatility</MudText>
@@ -21,10 +22,10 @@
 
                         <MudItem xs="12" sm="6">
                             <MudText Typo="Typo.body2">
-                                Volatiliteitsschaling (Alpha): <b>@ScalingExponent.ToString("F2")</b> 
+                                Diffusieschaling: <b>@ScalingExponent.ToString("F2")</b> 
                                 <MudChip T="string" Size="Size.Small" Color="@GetChipColor()">@GetScalingDescription()</MudChip>
                             </MudText>
-                            <MudSlider @bind-Value="ScalingExponent" Min="0.1" Max="0.9" Step="0.05" Color="Color.Secondary" />
+                            <MudSlider @bind-Value="ScalingExponent" Min="0.1" Max="1" Step="0.05" Color="Color.Secondary" />
                         </MudItem>
                     </MudGrid>
                 </MudCardContent>
@@ -60,8 +61,6 @@
     }
 
     private List<ChartSeries<double>> _series = new();
-    
-    // DisableLegend verwijderd om de error op te lossen
     private ChartOptions _options = new ChartOptions();
 
     protected override void OnInitialized()
@@ -71,21 +70,10 @@
 
     private void GenerateData()
     {
-        var random = new Random();
-        
-        double dt = 1.0 / NumberOfSteps;
-        double dx = Math.Pow(dt, ScalingExponent); 
+        // 1. Vraag de data op uit de Numerics back-end
+        double[] data = StochasticProcesses.GenerateBrownianMotionPath(NumberOfSteps, ScalingExponent);
 
-        double[] data = new double[NumberOfSteps + 1];
-        
-        data[0] = 0.0;
-
-        for (int i = 1; i <= NumberOfSteps; i++)
-        {
-            double stepDirection = random.NextDouble() >= 0.5 ? 1.0 : -1.0;
-            data[i] = data[i - 1] + stepDirection * dx;
-        }
-
+        // 2. Stop de data in de grafiek
         _series = new List<ChartSeries<double>>
         {
             new ChartSeries<double> { Name = "Stochastisch Pad", Data = data }
